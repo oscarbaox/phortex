@@ -131,7 +131,9 @@ class LawnSpiralWithStartGeneratorFlexible(TrajectoryGenerator):
         # self.lh = lh
         # self.lw = lw
 
-    def generate(self, lh, lw, orientation, origin_x, origin_y):
+    def generate(self, lh, lw, orientation, origin_x, origin_y, *kwargs):
+        for name,value in kwargs:
+            name = value
         if self.traj_type == "lawnmower":
             return LawnmowerWithStart(self.t0, self.vel, lh, lw,
                                       self.res,

@@ -487,6 +487,7 @@ class MTT(ScienceModel):
 
         Returns: mean, variance at the location and time
         """
+        print("getting model prediction")
         if from_cache:
             # Read from cache and return nearest values in xyzt
             ms, vs, xs, ys, zs, ts, ns = self.read_prediction_cache()
@@ -522,6 +523,7 @@ class MTT(ScienceModel):
         vals = []
         # Push samples through get value
         for i in range(0, num_samples):
+            print(f"getting mean and var: {i}")
             enviro = self._set_model_parameters_from_sample(t, enviro, i, temp)
             vals.append(enviro.get_value(t, loc))
         return np.nanmean(vals, axis=0), np.nanvar(vals, axis=0)

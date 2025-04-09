@@ -46,7 +46,7 @@ class TrajectoryChain(Planner):
             try:
                 # Try 3D get_maxima function
                 xm, ym, zm = self.planners[0].env_model.get_maxima(
-                    t, z=[planner.traj_generator.alt])
+                        t, z=[planner.traj_generator.alt])
                 thm = self.planners[0].env_model.curr_head_sampler.heading(t) * 180. / np.pi
             except Exception as e:
                 # Except to 2D get_maxima function

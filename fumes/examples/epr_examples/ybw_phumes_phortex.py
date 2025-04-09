@@ -16,7 +16,7 @@ from fumes.environment.utils import eos_rho, pacific_sp_T, pacific_sp_S, curfunc
 from fumes.model.mtt import Crossflow
 from fumes.model.parameter import ParameterKDE
 
-from fumes.reward import SampleValues
+from fumes.reward import SampleValues, SampleValuesPrioritizeMid, SampleUCB, SampleUCBEdited
 
 from fumes.robot import OfflineRobot
 from fumes.simulator import Simulator
@@ -32,13 +32,15 @@ print("Experiment Name: ", experiment_name)
 
 # Set iteration parameters
 if code_test:
-    sample_iter = 20  # number of samples to search over
+    sample_iter = 5  # number of samples to search over
     burn = 1  # number of burn-in samples
     plan_iter = 15  # planning iterations
     outer_iter = 2  # number of traj and model update loops
-    samp_dist = 1.0  # distance between samples (in meters)
-    time_resolution = 100  # time resolution (in seconds)
-    duration = 3 * 100  # total mission time (in seconds)
+    samp_dist = 5.0  # distance between samples (in meters)
+    #time_resolution = 100  # time resolution (in seconds)
+    #duration = 3 * 100  # total mission time (in seconds)
+    time_resolution = 400  # time resolution (in seconds)
+    duration = 12 * 100  # total mission time (in seconds)
     num_snaps = 3
     sampling_heights = [80., 120.]
 
@@ -184,9 +186,13 @@ com_window = 120  # communication window (in seconds)
 ####
 # Reward function
 ####
-reward = SampleValues(
+#reward = SampleValues(
+#    sampling_params={"samp_dist": samp_dist},
+#    is_cost=True)
+reward = SampleValuesPrioritizeMid(
     sampling_params={"samp_dist": samp_dist},
-    is_cost=True)
+    is_cost=True
+)
 
 ####
 # Create Environment
@@ -277,6 +283,7 @@ for i in range(outer_iter):
             thm = curhead.heading(start_time) * 180. / np.pi
 
             # Create planner
+            print(f"x0: 100., 430., {thm}, {xm}, {ym}")
             planners.append(TrajectoryOpt(
                 mtt,
                 traj_generator,
@@ -288,6 +295,8 @@ for i in range(outer_iter):
                 limits=[-np.inf, np.inf, -np.inf, np.inf],
                 max_iters=plan_iter,
                 experiment_name=exp_name,
+                hierarchy=True,
+                initial_params=[100.,430.,thm,None,None]
             ))
             print("Done.")
 

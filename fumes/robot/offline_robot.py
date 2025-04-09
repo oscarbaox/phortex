@@ -49,6 +49,7 @@ class OfflineRobot(Robot):
 
         samp = self.environment.get_value(t, self.coordinate)
         self.current_observation = samp
+        #print(f"self.coordinate: {self.coordinate}")
         self.observation_buffer[self.coordinate] = samp[0]
 
         if t - self.last_report > self.com_window:

@@ -81,6 +81,53 @@ class SampleValues(Reward):
         return reward
 
 
+class SampleValuesPrioritizeMid(Reward):
+    """Counts the summed difference of the sample values from 0.5."""
+
+    def __init__(self, sampling_params={}, is_cost=False):
+        """Initialize reward object.
+
+        Args:
+            sampling_params (dict): a dictionary of named paramters with which to call
+                `uniformly_sample`. Defaults to an empty ditionary.
+            is_cost (bool): if True, returns a cost instead of reward value
+        """
+        self.params = sampling_params
+        self.is_cost = is_cost
+
+    def _json_stats(self):
+        """Returns dict of reward info."""
+        json_dict = {"reward_func": "SampleValues",
+                     "sampling_params": self.params,
+                     "is_cost": self.is_cost}
+        return json_dict
+
+    def eval(self, trajectory, env_model, from_cache=False):
+        """Evaluate the reward of a trajectory and model or environment.
+
+        Args:
+            trajectory (Trajectory): a Trajectory object
+            env_model (Model/Environment): a Model or Environemnt object,
+                supporting method `get_val`
+
+        Returns: (float) reward value
+        """
+        # Get sample points
+        samples = np.asarray(trajectory.uniformly_sample(**self.params))
+
+        # Grab the reward from the at a specific snapshot time
+        # Assumes that a snapshot at the start of the trajectory
+        # are the same.
+
+        vals = env_model.get_value(t=trajectory.t0, loc=(
+            samples[:, 1], samples[:, 2], samples[:, 3]), from_cache=from_cache)
+        reward = 1e4 * (1 - ((0.5 - float(vals.sum()))**2))
+
+        if self.is_cost:
+            return -1.0 * reward
+        return reward
+
+
 class SampleUCB(Reward):
     """Counts the total UCB value of the samples."""
 
@@ -127,6 +174,58 @@ class SampleUCB(Reward):
 
         # UCB reward
         reward = 1e4 * (float(mean.sum()) + self.c * float(var.sum()))
+        if self.is_cost:
+            return -1.0 * reward
+        return reward
+
+# Edits
+class SampleUCBEdited(Reward):
+    """Counts the total UCB value of the samples."""
+
+    def __init__(self, sampling_params={}, is_cost=False, c=1.0):
+        """Initialize reward object.
+
+        Args:
+            sampling_params (dict): a dictionary of named paramters with which to call
+                `uniformly_sample`. Defaults to an empty ditionary.
+            is_cost (bool): if True, returns a cost instead of reward value
+        """
+        self.params = sampling_params
+        self.is_cost = is_cost
+        self.c = c
+
+    def _json_stats(self):
+        """Returns dict of reward info."""
+        json_dict = {"reward_func": "SampleUCB",
+                     "sampling_params": self.params,
+                     "is_cost": self.is_cost,
+                     "c": self.c}
+        return json_dict
+
+    def eval(self, trajectory, env_model, from_cache=False):
+        """Evaluate the reward of a trajectory and model or environment.
+
+        Args:
+            trajectory (Trajectory): a Trajectory object
+            env_model (Model/Environment): a Model or Environemnt object,
+                supporting method `get_val`
+
+        Returns: (float) reward value
+        """
+
+        # Get sample points
+        samples = np.asarray(trajectory.uniformly_sample(**self.params))
+
+        # Grab the reward from the at a specific snapshot time
+        # Assumes that a snapshot at the start of the trajectory
+        # are the same.
+
+        mean, var = env_model.get_prediction(t=trajectory.t0, loc=(
+            samples[:, 1], samples[:, 2], samples[:, 3]), from_cache=from_cache)
+        print(f"reward mean: {mean}")
+
+        # Rewards values near 0.5 and high variance
+        reward = 1e4 * (1 - (float(mean.sum())-0.5)**2 + self.c * float(var.sum()))
         if self.is_cost:
             return -1.0 * reward
         return reward

@@ -18,7 +18,8 @@ class TrajectoryOpt(Planner):
     def __init__(self, env_model, traj_generator, reward, x0, budget=None,
                  limits=[0., 1000., 0., 1000.], param_bounds=None,
                  param_names=None, max_iters=30, tol=1e-8,
-                 method="trust-constr", experiment_name=None):
+                 method="trust-constr", experiment_name=None, hierarchy=False,
+                 initial_params=[]):
         """ Initialize trajectory optmizer.
 
         Args:
@@ -58,6 +59,8 @@ class TrajectoryOpt(Planner):
         self.tol = tol
         self.experiment_name = experiment_name
         self.reward_history = []
+        self.hierarchy = hierarchy
+        self.initial_params = initial_params
 
         if self.experiment_name is None:
             self.experiment_name = "temp"
@@ -103,7 +106,7 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             con += length_constraint(
-                self.traj_generator.generate, budget=self.budget, method=self.method)
+                self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=self.initial_params)
 
         if self.limits is not None:
             print("Adding safety boundary constraint.")
@@ -112,7 +115,7 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             con += bound_constraint(
-                self.traj_generator.generate, limits=self.limits, method=self.method)
+                self.traj_generator.generate, limits=self.limits, method=self.method, constant_params=self.initial_params)
 
         if self.param_bounds is not None:
             print("Adding parameter bounds constraint.")
@@ -125,6 +128,7 @@ class TrajectoryOpt(Planner):
         ##############################
         #### Add soft constraints ####
         ##############################
+
         def rew(theta):
             return self.reward.eval(
                 self.traj_generator.generate(*theta),
@@ -160,6 +164,19 @@ class TrajectoryOpt(Planner):
         def fun(theta):
             return rew(theta) + s_origin(theta) + s_com(theta)
 
+        def make_fun_subset(constant_params):
+            def fun_subset(sub_theta):
+                theta = []
+                opt_var_count = 0
+                for param_value in constant_params:
+                    if param_value is not None:
+                        theta += [param_value]
+                    else:
+                        theta += [sub_theta[opt_var_count]]
+                        opt_var_count += 1
+                return fun(theta)
+            return fun_subset
+
         ############################
         #### Solve optimization ####
         ############################
@@ -190,15 +207,109 @@ class TrajectoryOpt(Planner):
                 self.method == "trust-constr" or \
                 self.method == "BFGS":
 
-            res = optimize.minimize(
-                fun=fun,
-                jac=None,
-                x0=np.array(self.x0),
-                options=options,
-                bounds=bon,
-                constraints=con,
-                method=self.method,
-                callback=self._callback)
+            #print(f"x0 for opt: {self.x0}")
+            #print(f"method: {self.method}")
+            #print(f"constraints: {con}")
+            for c in con:
+                if isinstance(c, optimize.NonlinearConstraint):
+                    #print(f"Constraint: {c}, function = {c.fun}")
+                    constraint_value = c.fun(self.x0)  # Evaluate constraint function
+                    lb, ub = c.lb, c.ub  # Lower and upper bounds
+                    #print(f"Nonlinear constraint at x0: {constraint_value}, should be in [{lb}, {ub}]")
+                    
+                    #if np.any(constraint_value < lb) or np.any(constraint_value > ub):
+                    #    print("x0 violates this constraint!")
+            if not self.hierarchy:
+                res = optimize.minimize(
+                    fun=fun,
+                    jac=None,
+                    x0=np.array(self.x0),
+                    options=options,
+                    bounds=bon,
+                    constraints=con,
+                    method=self.method,
+                    callback=self._callback)
+            else:
+                # Perform two different optimizations on subsets of the parameters
+                # First optimization
+                fun_subset = make_fun_subset(self.initial_params)
+                x0_subset = [self.x0[i] for i in range(len(self.x0)) if self.initial_params[i] is None]
+                res = optimize.minimize(
+                    fun=fun_subset,
+                    jac=None,
+                    x0=np.array(x0_subset),
+                    options=options,
+                    bounds=bon,
+                    constraints=con,
+                    method=self.method,
+                    callback=self._callback)
+                result1 = res.x
+
+                # Second optimization
+                new_x0_subset = []
+                new_initial_params = []
+                unpacked_results_count = 0 
+                for index,value in enumerate(self.initial_params):
+                    if value is None:
+                        new_initial_params += [result[unpacked_results_count]]
+                    else:
+                        new_x0_subset += [self.x0[index]]
+                        new_initial_params += [None]
+                fun_subset = make_fun_subset(new_initial_params)
+
+                ### TODO: maybe break into separate function? if we're assembling constraints
+                ### multiple times
+                ### Reconstruct constraints
+                ###########################
+                #### Setup constraints ####
+                ###########################
+                con = []
+                bon = []
+                if self.budget is not None:
+                    print("Adding budget constraint.")
+                    if self.method != "SLSQP" and self.method != "trust-constr":
+                        raise ValueError("Cannot perform constrained optimization.")
+
+                    # Instantiate constraint
+                    con += length_constraint(
+                        self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=new_initial_params)
+
+                if self.limits is not None:
+                    print("Adding safety boundary constraint.")
+                    if self.method != "SLSQP" and self.method != "trust-constr":
+                        raise ValueError("Cannot perform constrained optimization.")
+
+                    # Instantiate constraint
+                    con += bound_constraint(
+                        self.traj_generator.generate, limits=self.limits, method=self.method,constant_params=new_initial_params)
+
+                if self.param_bounds is not None:
+                    print("Adding parameter bounds constraint.")
+                    if self.method != "SLSQP" and self.method != "trust-constr":
+                        raise ValueError("Cannot perform constrained optimization.")
+
+                    # Instantiate constraint
+                    bon += param_constraint(param_bounds=self.param_bounds, method=self.method)
+
+                res = optimize.minimize(
+                    fun=fun_subset,
+                    jac=None,
+                    x0=np.array(new_x0_subset),
+                    options=options,
+                    bounds=bon,
+                    constraints=con,
+                    method=self.method,
+                    callback=self._callback)
+                
+                result2 = []
+                result1_idx = 0
+                result2_idx = 0
+                for index,value in enumerate(self.initial_params):
+                    if value is None:
+                        result2 += [result1[result1_idx]]
+                    else:
+                        result2 += res.x[result2_idx]
+
         elif self.method == "basinhopping":
             res = optimize.basinhopping(
                 func=lambda theta: self.reward.eval(
@@ -213,7 +324,10 @@ class TrajectoryOpt(Planner):
 
         print("Optimization completed. Result:", res.x)
         print("Length:", self.traj_generator.generate(*res.x).length)
-        return self.traj_generator.generate(*res.x)
+        if not hierarchy:
+            return self.traj_generator.generate(*res.x)
+        else:
+            return self.traj_generator.generate(*result2)
 
     def _callback(self, x, *args):
         """This callback is called during every iteration of optimization."""
