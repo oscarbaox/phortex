@@ -167,7 +167,7 @@ def bound_constraint(traj_generator, limits, method="SLSQP", constant_params=Non
         ]
 
 
-def param_constraint(param_bounds, method="SLSQP"):
+def param_constraint(param_bounds, method="SLSQP", constant_params=None):
     """Generates a bound constratins for all paramters.
 
     For a given trajectory generator, generates a linear

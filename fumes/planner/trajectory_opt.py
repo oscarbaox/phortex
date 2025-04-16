@@ -11,7 +11,7 @@ from fumes.simulator.utils import visualize_and_save_traj
 
 from .planner import Planner
 from .utils import length_constraint, bound_constraint, param_constraint, \
-    soft_origin_penalty
+    soft_origin_penalty, reconstruct_theta
 
 
 class TrajectoryOpt(Planner):
@@ -19,7 +19,7 @@ class TrajectoryOpt(Planner):
                  limits=[0., 1000., 0., 1000.], param_bounds=None,
                  param_names=None, max_iters=30, tol=1e-8,
                  method="trust-constr", experiment_name=None, hierarchy=False,
-                 initial_params=[]):
+                 initial_params=[None,None,None,None,None]):
         """ Initialize trajectory optmizer.
 
         Args:
@@ -61,6 +61,7 @@ class TrajectoryOpt(Planner):
         self.reward_history = []
         self.hierarchy = hierarchy
         self.initial_params = initial_params
+        self.constant_params = initial_params
 
         if self.experiment_name is None:
             self.experiment_name = "temp"
@@ -123,7 +124,8 @@ class TrajectoryOpt(Planner):
                 raise ValueError("Cannot perform constrained optimization.")
 
             # Instantiate constraint
-            bon += param_constraint(param_bounds=self.param_bounds, method=self.method)
+            param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if self.initial_params[i] is None]
+            bon += param_constraint(param_bounds=param_bounds_subset, method=self.method)
 
         ##############################
         #### Add soft constraints ####
@@ -244,6 +246,7 @@ class TrajectoryOpt(Planner):
                     method=self.method,
                     callback=self._callback)
                 result1 = res.x
+                print("Completed first optimization")
 
                 # Second optimization
                 new_x0_subset = []
@@ -251,11 +254,13 @@ class TrajectoryOpt(Planner):
                 unpacked_results_count = 0 
                 for index,value in enumerate(self.initial_params):
                     if value is None:
-                        new_initial_params += [result[unpacked_results_count]]
+                        new_initial_params += [result1[unpacked_results_count]]
+                        unpacked_results_count += 1
                     else:
                         new_x0_subset += [self.x0[index]]
                         new_initial_params += [None]
-                fun_subset = make_fun_subset(new_initial_params)
+                self.secondary_params = new_initial_params
+                fun_subset = make_fun_subset(self.secondary_params)
 
                 ### TODO: maybe break into separate function? if we're assembling constraints
                 ### multiple times
@@ -289,7 +294,8 @@ class TrajectoryOpt(Planner):
                         raise ValueError("Cannot perform constrained optimization.")
 
                     # Instantiate constraint
-                    bon += param_constraint(param_bounds=self.param_bounds, method=self.method)
+                    param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if new_initial_params[i] is None]
+                    bon += param_constraint(param_bounds=param_bounds_subset, method=self.method)
 
                 res = optimize.minimize(
                     fun=fun_subset,
@@ -299,16 +305,20 @@ class TrajectoryOpt(Planner):
                     bounds=bon,
                     constraints=con,
                     method=self.method,
-                    callback=self._callback)
+                    callback=self._callback_secondary)
                 
                 result2 = []
                 result1_idx = 0
                 result2_idx = 0
                 for index,value in enumerate(self.initial_params):
+                    print(f"Index:{index}, Value:{value}")
                     if value is None:
                         result2 += [result1[result1_idx]]
+                        result1_idx += 1
                     else:
-                        result2 += res.x[result2_idx]
+                        result2 += [res.x[result2_idx]]
+                        result2_idx += 1
+                print(result2)
 
         elif self.method == "basinhopping":
             res = optimize.basinhopping(
@@ -322,17 +332,21 @@ class TrajectoryOpt(Planner):
             raise ValueError(f"Unrecognized optimization method {self.method}."
                              f"Should be one of SLSQP, trust-constr, BFGS, or basinhopping.")
 
-        print("Optimization completed. Result:", res.x)
-        print("Length:", self.traj_generator.generate(*res.x).length)
-        if not hierarchy:
+        if not self.hierarchy:
+            print("Optimization completed. Result:", res.x)
+            print("Length:", self.traj_generator.generate(*res.x).length)
             return self.traj_generator.generate(*res.x)
         else:
+            print("Optimization completed. Result:", result2)
+            print("Length:", self.traj_generator.generate(*result2).length)
             return self.traj_generator.generate(*result2)
 
     def _callback(self, x, *args):
         """This callback is called during every iteration of optimization."""
         # rew = self.reward.eval(self.traj_generator.generate(*x), self.env_model)
         # import pdb; pdb.set_trace()
+        const_params = self.constant_params
+        x = reconstruct_theta(const_params,x)
         rew = args[0].fun
         self.reward_history.append(rew)
         plt.plot(range(len(self.reward_history)), self.reward_history)
@@ -358,3 +372,36 @@ class TrajectoryOpt(Planner):
                 traj_name=os.path.join(self.path, f"temp_{self.id}iter{self.neval}"))
             print("Done.")
         self.neval += 1
+
+    def _callback_secondary(self, x, *args):
+        """This callback is called during every iteration of optimization."""
+        # rew = self.reward.eval(self.traj_generator.generate(*x), self.env_model)
+        # import pdb; pdb.set_trace()
+        const_params = self.secondary_params
+        x = reconstruct_theta(const_params,x)
+        rew = args[0].fun
+        self.reward_history.append(rew)
+        plt.plot(range(len(self.reward_history)), self.reward_history)
+        plt.xlabel("Iterations")
+        plt.ylabel("(Negative) Reward")
+        plt.title("Optimization progress (should go down)")
+        plt.savefig(os.path.join(self.path, f"training_progress_{self.id}plot.png"))
+        plt.close()
+
+        print(
+            # f"n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
+            f"n:{self.neval}\t Value:{rew}")
+            # f"n:{self.neval}")
+        if not (self.neval % 10):
+            print(
+                f"\t n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
+            print("Saving mission checkpoint.")
+
+            traj = self.traj_generator.generate(*x)
+            visualize_and_save_traj(
+                traj,
+                self.env_model.extent,
+                traj_name=os.path.join(self.path, f"temp_{self.id}iter{self.neval}"))
+            print("Done.")
+        self.neval += 1
+
