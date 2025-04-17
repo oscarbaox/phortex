@@ -19,10 +19,11 @@ class TrajectoryChain(Planner):
         """
         self.planners = planners
 
-    def get_plan(self, from_cache=False):
+    def get_plan(self, true_environment=None, from_cache=False):
         """Run the planner and return a Trajectory object.
 
         Args:
+            true_environment (Environment): Ground truth environment for metric evaluation
             from_cache (bool): if True, uses the model cache
                 during planning.
         """
@@ -46,7 +47,7 @@ class TrajectoryChain(Planner):
             try:
                 # Try 3D get_maxima function
                 xm, ym, zm = self.planners[0].env_model.get_maxima(
-                        t, z=[planner.traj_generator.alt])
+                    t, z=[planner.traj_generator.alt])
                 thm = self.planners[0].env_model.curr_head_sampler.heading(t) * 180. / np.pi
             except Exception as e:
                 # Except to 2D get_maxima function
@@ -106,7 +107,8 @@ class TrajectoryChain(Planner):
             planner.x0 = tuple(x0)
 
             # Get the next trajectory in the chain
-            traj_chain.append(planner.get_plan(soft_origin=soft_origin,
+            traj_chain.append(planner.get_plan(true_environment=true_environment,
+                                               soft_origin=soft_origin,
                                                soft_com=soft_com,
                                                from_cache=from_cache))
 

@@ -6,7 +6,7 @@ from scipy.optimize import NonlinearConstraint, LinearConstraint
 # If True, the optimization is constrained to keep the solution feasbile
 # at each iteration. In practice, this seems to really hurt optimizer
 # performance. Recommended to set to False.
-KEEP_FEASIBLE = True
+KEEP_FEASIBLE = False
 THRESH_BUDGET_LB = 0.80
 
 
@@ -36,7 +36,7 @@ def soft_origin_penalty(theta, origin):
     return (origin_x - origin[0])**2 + (origin_y - origin[1])**2
 
 
-def length_constraint(traj_generator, budget, method="SLSQP", constant_params=None):
+def length_constraint(traj_generator, budget, method="SLSQP"):
     """Generates length constraint for optimization methods.
 
     For a given trajectory generator, generates a nonlinear
@@ -50,14 +50,10 @@ def length_constraint(traj_generator, budget, method="SLSQP", constant_params=No
 
     def length_lb(theta):
         """Trajectory length >= 1"""
-        if constant_params is not None:
-            return traj_generator(*reconstruct_theta(constant_params,theta)).length - THRESH_BUDGET_LB*budget    
         return traj_generator(*theta).length - THRESH_BUDGET_LB*budget
 
     def length_ub(theta):
         """Trajectory length <= budget"""
-        if constant_params is not None:
-            return -traj_generator(*reconstruct_theta(constant_params,theta)).length + budget
         return -traj_generator(*theta).length + budget
 
     if method == "SLSQP":
@@ -69,19 +65,6 @@ def length_constraint(traj_generator, budget, method="SLSQP", constant_params=No
         #     {"type": "eq", "fun": length_ub},
         # ]
     elif method == "trust-constr":
-        if constant_params is not None:
-            return [
-            NonlinearConstraint(
-                fun=lambda theta: traj_generator(*reconstruct_theta(constant_params,theta)).length,
-                jac="2-point",
-                # lb=1.,
-                lb=THRESH_BUDGET_LB*budget,
-                ub=budget,
-                # COMMENTED OUT FOR TESTING
-                #keep_feasible=KEEP_FEASIBLE
-                keep_feasible=False
-            )
-        ]
         return [
             NonlinearConstraint(
                 fun=lambda theta: traj_generator(*theta).length,
@@ -89,14 +72,12 @@ def length_constraint(traj_generator, budget, method="SLSQP", constant_params=No
                 # lb=1.,
                 lb=THRESH_BUDGET_LB*budget,
                 ub=budget,
-                # COMMENTED OUT FOR TESTING
-                #keep_feasible=KEEP_FEASIBLE
-                keep_feasible=False
+                keep_feasible=KEEP_FEASIBLE
             )
         ]
 
 
-def bound_constraint(traj_generator, limits, method="SLSQP", constant_params=None):
+def bound_constraint(traj_generator, limits, method="SLSQP"):
     """Generates a boundary constraint for optimization methods.
 
     For a given trajectory generator, generates a nonlinear
@@ -112,20 +93,19 @@ def bound_constraint(traj_generator, limits, method="SLSQP", constant_params=Non
 
     def x_lb(theta):
         """Trajectory xmin >= xmin"""
-        #return traj_generator(*theta).xmin - limits[0]
-        return traj_generator(*reconstruct_theta(constant_params,theta)).xmin - limits[0]
+        return traj_generator(*theta).xmin - limits[0]
 
     def x_ub(theta):
         """Trajectory xmax <= xmax"""
-        return -traj_generator(*reconstruct_theta(constant_params,theta)).xmax + limits[1]
+        return -traj_generator(*theta).xmax + limits[1]
 
     def y_lb(theta):
         """Trajectory ymin >= ymin"""
-        return traj_generator(*reconstruct_theta(constant_params,theta)).ymin - limits[2]
+        return traj_generator(*theta).ymin - limits[2]
 
     def y_ub(theta):
         """Trajectory ymax <= ymax"""
-        return -traj_generator(*reconstruct_theta(constant_params,theta)).ymax + limits[3]
+        return -traj_generator(*theta).ymax + limits[3]
 
     if method == "SLSQP":
         return [
@@ -137,28 +117,28 @@ def bound_constraint(traj_generator, limits, method="SLSQP", constant_params=Non
     elif method == "trust-constr" or method=="basinhopping":
         return [
             NonlinearConstraint(
-                fun=lambda theta: traj_generator(*reconstruct_theta(constant_params,theta)).xmin,
+                fun=lambda theta: traj_generator(*theta).xmin,
                 jac="2-point",
                 lb=limits[0],
                 ub=limits[1],
                 keep_feasible=KEEP_FEASIBLE
             ),
             NonlinearConstraint(
-                fun=lambda theta: traj_generator(*reconstruct_theta(constant_params,theta)).xmax,
+                fun=lambda theta: traj_generator(*theta).xmax,
                 jac="2-point",
                 lb=limits[0],
                 ub=limits[1],
                 keep_feasible=KEEP_FEASIBLE
             ),
             NonlinearConstraint(
-                fun=lambda theta: traj_generator(*reconstruct_theta(constant_params,theta)).ymin,
+                fun=lambda theta: traj_generator(*theta).ymin,
                 jac="2-point",
                 lb=limits[2],
                 ub=limits[3],
                 keep_feasible=KEEP_FEASIBLE
             ),
             NonlinearConstraint(
-                fun=lambda theta: traj_generator(*reconstruct_theta(constant_params,theta)).ymax,
+                fun=lambda theta: traj_generator(*theta).ymax,
                 jac="2-point",
                 lb=limits[2],
                 ub=limits[3],
@@ -167,7 +147,7 @@ def bound_constraint(traj_generator, limits, method="SLSQP", constant_params=Non
         ]
 
 
-def param_constraint(param_bounds, method="SLSQP", constant_params=None):
+def param_constraint(param_bounds, method="SLSQP"):
     """Generates a bound constratins for all paramters.
 
     For a given trajectory generator, generates a linear
@@ -194,20 +174,3 @@ def param_constraint(param_bounds, method="SLSQP", constant_params=None):
         #         keep_feasible=[True] * len(param_bounds)
         #     )
         # ]
-
-def reconstruct_theta(constant_params,theta_in):
-    """
-    Reconstructs list of all optimization variables, given some are fixed
-    and some are to optimize over.
-    """
-    if constant_params is None:
-        return theta_in
-    theta = []
-    opt_var_count = 0
-    for param_value in constant_params:
-        if param_value is not None:
-            theta += [param_value]
-        else:
-            theta += [theta_in[opt_var_count]]
-            opt_var_count += 1
-    return theta

@@ -134,7 +134,7 @@ class TicToc(object):
         if type(method) is int and method < len(self._int2strl):
             method = self._int2strl[method]
         elif type(method) is int and method > len(self._int2strl):
-            self._warning_value(method)
+            self.__warning_value(method)
             method = 'time'
 
         # Parses from int to the actual timer
@@ -142,7 +142,7 @@ class TicToc(object):
             self._get_time = self._str2fn[method][0]
             self._measure = self._str2fn[method][1]
         elif type(method) is str and method not in self._str2fn:
-            self._warning_value(method)
+            self.__warning_value(method)
             self._get_time = self._str2fn['time'][0]
             self._measure = self._str2fn['time'][1]
 
