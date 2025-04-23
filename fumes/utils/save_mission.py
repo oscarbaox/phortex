@@ -74,7 +74,7 @@ def save_experiment_visualsnapshot(experiment_name, iter_num, rob, model, env, t
     plt.savefig(os.path.join(directory, f"trajectory_snapshot_{iter_num}.png"))
 
 
-def save_experiment_visualsnapshot_atT(experiment_name, iter_num, rob, model, env, traj_opt, trajectory, reward, simulation, experiment_dict, T):
+def save_experiment_visualsnapshot_atT(experiment_name, iter_num, rob, model, env, traj_opt, trajectory, reward, simulation, experiment_dict, T, params={}):
     """Takes any definable experimental element and saves to visual snapshot."""
     directory = os.path.join(os.getenv("FUMES_OUTPUT"), f"simulations/{experiment_name}")
     if not os.path.exists(directory):
@@ -114,6 +114,10 @@ def save_experiment_visualsnapshot_atT(experiment_name, iter_num, rob, model, en
     plt.xlabel('X-coordinate')
     plt.ylabel('Y-coordinate')
     plt.savefig(os.path.join(directory, f"trajectory_snapshot_{iter_num}.png"))
+
+    # Save top-level parameters:
+    with open(os.path.join(directory,"params.json"),'w') as f:
+        json.dump(params,f) 
 
 
 def save_experiment_json(experiment_name, iter_num, rob, model, env, traj_opt, trajectory, reward, simulation, experiment_dict):

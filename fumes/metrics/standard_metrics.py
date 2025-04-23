@@ -139,92 +139,94 @@ class ComputationalEfficiencyMetric(OptimizationMetric):
             'average_improvement_per_step': float(np.mean(np.diff(reward_history)))
         } 
     
-    class RobustnessMetric(OptimizationMetric):
-        """Evaluates trajectory robustness to perturbations"""
+class RobustnessMetric(OptimizationMetric):
+    """Evaluates trajectory robustness to perturbations"""
+    
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+        # Add small perturbations to trajectory parameters
+        perturbation = 0.05  # 5% perturbation
+        original_value = env_model.get_value(t=trajectory.t0, 
+                                        loc=(trajectory.xcoords, 
+                                                trajectory.ycoords, 
+                                                trajectory.altitude))
         
-        def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
-            # Add small perturbations to trajectory parameters
-            perturbation = 0.05  # 5% perturbation
-            original_value = env_model.get_value(t=trajectory.t0, 
-                                            loc=(trajectory.xcoords, 
-                                                    trajectory.ycoords, 
-                                                    trajectory.altitude))
+        perturbed_values = []
+        for _ in range(10):  # Test 10 perturbations
+            perturbed_coords = (trajectory.xcoords * (1 + np.random.normal(0, perturbation)),
+                            trajectory.ycoords * (1 + np.random.normal(0, perturbation)),
+                            trajectory.altitude)
             
-            perturbed_values = []
-            for _ in range(10):  # Test 10 perturbations
-                perturbed_coords = (trajectory.xcoords * (1 + np.random.normal(0, perturbation)),
-                                trajectory.ycoords * (1 + np.random.normal(0, perturbation)),
-                                trajectory.altitude)
-                
-                perturbed_value = env_model.get_value(t=trajectory.t0, loc=perturbed_coords)
-                perturbed_values.append(perturbed_value)
-                
-            return {
-                'stability_score': float(np.std(perturbed_values) / np.mean(perturbed_values)),
-                'worst_case_deviation': float(np.max(np.abs(perturbed_values - original_value))),
-                'mean_sensitivity': float(np.mean(np.abs(perturbed_values - original_value)))
-            }
-    class InformationGainMetric(OptimizationMetric):
-        """Evaluates the information gained during trajectory execution"""
+            perturbed_value = env_model.get_value(t=trajectory.t0, loc=perturbed_coords)
+            perturbed_values.append(perturbed_value)
+            
+        return {
+            'stability_score': float(np.std(perturbed_values) / np.mean(perturbed_values)),
+            'worst_case_deviation': float(np.max(np.abs(perturbed_values - original_value))),
+            'mean_sensitivity': float(np.mean(np.abs(perturbed_values - original_value)))
+        }
+class InformationGainMetric(OptimizationMetric):
+    """Evaluates the information gained during trajectory execution"""
+    
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+        # Sample points along trajectory
+        points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
+        points = np.array(points)
         
-        def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
-            # Sample points along trajectory
-            points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
-            points = np.array(points)
-            
-            # Get model uncertainties at start and end
-            initial_uncertainty = env_model.get_prediction(t=trajectory.t0, 
-                                                        loc=(points[:, 1], points[:, 2], points[:, 3]))[1]
-            final_uncertainty = env_model.get_prediction(t=trajectory.time_at_end,
+        # Get model uncertainties at start and end
+        initial_uncertainty = env_model.get_prediction(t=trajectory.t0, 
                                                     loc=(points[:, 1], points[:, 2], points[:, 3]))[1]
-            
-            return {
-                'uncertainty_reduction': float(np.mean(initial_uncertainty - final_uncertainty)),
-                'final_entropy': float(np.mean(final_uncertainty)),
-                'information_gain_rate': float(np.mean(initial_uncertainty - final_uncertainty) / trajectory.length)
-            }
-    class SpatialEfficiencyMetric(OptimizationMetric):
-        """Evaluates the spatial efficiency of the trajectory"""
+        final_uncertainty = env_model.get_prediction(t=trajectory.time_at_end,
+                                                loc=(points[:, 1], points[:, 2], points[:, 3]))[1]
         
-        def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
-            # Get trajectory points
-            points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
-            points = np.array(points)
-            
-            # Calculate metrics
-            path_length = trajectory.length
-            area_covered = (trajectory.xmax - trajectory.xmin) * (trajectory.ymax - trajectory.ymin)
-            
-            # Calculate trajectory curvature
-            dx = np.diff(points[:, 1])  # x coordinates
-            dy = np.diff(points[:, 2])  # y coordinates
-            angles = np.arctan2(dy, dx)
-            curvature = np.abs(np.diff(angles))
-            
-            return {
-                'coverage_efficiency': float(area_covered / path_length),
-                'path_smoothness': float(np.mean(curvature)),
-                'space_utilization': float(len(points) / area_covered)
-            }
-    class PlumeDynamicsMetric(OptimizationMetric):
-        """Evaluates how well the trajectory adapts to plume dynamics"""
+        return {
+            'uncertainty_reduction': float(np.mean(initial_uncertainty - final_uncertainty)),
+            'final_entropy': float(np.mean(final_uncertainty)),
+            'information_gain_rate': float(np.mean(initial_uncertainty - final_uncertainty) / trajectory.length)
+        }
+
+class SpatialEfficiencyMetric(OptimizationMetric):
+    """Evaluates the spatial efficiency of the trajectory"""
+    
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+        # Get trajectory points
+        points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
+        points = np.array(points)
         
-        def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
-            # Sample at different time steps
-            times = np.linspace(trajectory.t0, trajectory.time_at_end, 10)
-            dynamics_scores = []
+        # Calculate metrics
+        path_length = trajectory.length
+        area_covered = (trajectory.xmax - trajectory.xmin) * (trajectory.ymax - trajectory.ymin)
+        
+        # Calculate trajectory curvature
+        dx = np.diff(points[:, 1])  # x coordinates
+        dy = np.diff(points[:, 2])  # y coordinates
+        angles = np.arctan2(dy, dx)
+        curvature = np.abs(np.diff(angles))
+        
+        return {
+            'coverage_efficiency': float(area_covered / path_length),
+            'path_smoothness': float(np.mean(curvature)),
+            'space_utilization': float(len(points) / area_covered)
+        }
+        
+class PlumeDynamicsMetric(OptimizationMetric):
+    """Evaluates how well the trajectory adapts to plume dynamics"""
+    
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+        # Sample at different time steps
+        times = np.linspace(trajectory.t0, trajectory.time_at_end, 10)
+        dynamics_scores = []
+        
+        for t in times:
+            # Get plume center at this time
+            true_center = true_environment.get_maxima(t)
+            pred_center = env_model.get_maxima(t)
             
-            for t in times:
-                # Get plume center at this time
-                true_center = true_environment.get_maxima(t)
-                pred_center = env_model.get_maxima(t)
-                
-                # Calculate center tracking error
-                center_error = np.linalg.norm(np.array(true_center) - np.array(pred_center))
-                dynamics_scores.append(center_error)
-                
-            return {
-                'center_tracking_error': float(np.mean(dynamics_scores)),
-                'temporal_variance': float(np.std(dynamics_scores)),
-                'max_deviation': float(np.max(dynamics_scores))
-            }
+            # Calculate center tracking error
+            center_error = np.linalg.norm(np.array(true_center) - np.array(pred_center))
+            dynamics_scores.append(center_error)
+            
+        return {
+            'center_tracking_error': float(np.mean(dynamics_scores)),
+            'temporal_variance': float(np.std(dynamics_scores)),
+            'max_deviation': float(np.max(dynamics_scores))
+        }

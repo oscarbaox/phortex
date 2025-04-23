@@ -20,7 +20,8 @@ class TrajectoryOpt(Planner):
                  limits=[0., 1000., 0., 1000.], param_bounds=None,
                  param_names=None, max_iters=30, tol=1e-8,
                  method="trust-constr", experiment_name=None, hierarchy=False,
-                 initial_params=[None,None,None,None,None],metrics=None):
+                 initial_params=[None,None,None,None,None],metrics=None,
+                 initial_opt=None):
         """ Initialize trajectory optmizer.
 
         Args:
@@ -66,6 +67,7 @@ class TrajectoryOpt(Planner):
         self.initial_params = initial_params
         self.constant_params = initial_params
         self.metrics = metrics or []  # Initialize empty list if no metrics provided
+        self.initial_opt = initial_opt
 
 
         if self.experiment_name is None:
@@ -259,6 +261,9 @@ class TrajectoryOpt(Planner):
                 options['gtol'] = self.tol
             elif self.method == "BFGS":
                 options['xtol'] = self.tol
+        
+        if self.initial_opt is not None:
+            options["eps"] = self.initial_opt
 
         if self.method == "SLSQP" or \
                 self.method == "trust-constr" or \

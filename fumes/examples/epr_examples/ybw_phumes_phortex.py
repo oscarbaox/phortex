@@ -24,10 +24,10 @@ from fumes.simulator import Simulator
 from fumes.trajectory.lawnmower import Lawnmower
 from fumes.planner import TrajectoryOpt, TrajectoryChain, LawnSpiralWithStartGeneratorFlexible
 from fumes.utils.save_mission import save_experiment_json, save_experiment_visualsnapshot_atT
-from fumes.metrics import CoverageMetric, ConvergenceMetric, ComputationalEfficiencyMetric
+from fumes.metrics.standard_metrics import *
 
 
-def main(initial_params):
+def main(params):
     # Set meta/saving parameters
     code_test = True
     experiment_name = f"ybw_d662_training{np.random.randint(low=0, high=1000)}"
@@ -295,21 +295,34 @@ def main(initial_params):
                 
 
                 # Create planner
-                print(f"x0: 100., 430., {thm}, {xm}, {ym}")
+                print(f"x0: {params['height']}, {params['length']}, {thm}, {xm}, {ym}")
+
+                initial_guess = [params["height"],params["length"],thm,xm,ym]
+                initial_params = []
+                hierarchy = False
+                for idx,val in enumerate(params["order"]):
+                    if val == 0:
+                        initial_params += [None]
+                    else:
+                        initial_params += [initial_guess[idx]]
+                        hierarchy = True
+                initial_opt = params["step"]
+
                 planners.append(TrajectoryOpt(
                     mtt,
                     traj_generator,
                     reward,
-                    x0=(10., 40., thm, xm, ym),  # (lh, lw, rot, origin_x, origin_y)
-                    param_bounds=[(20., 500), (20., 500.), (-360., 360.), (-100., 500.), (-100., 500.)],
+                    x0=initial_guess,  # (lh, lw, rot, origin_x, origin_y)
+                    param_bounds=[(5., 500), (5., 500.), (-360., 360.), (-100., 500.), (-100., 500.)],
                     param_names={"lh": 0, "lw": 1, "rot": 2, "origin_x": 3, "origin_y": 4},
                     budget=budget,
                     limits=[-np.inf, np.inf, -np.inf, np.inf],
                     max_iters=plan_iter,
                     experiment_name=exp_name,
-                    hierarchy=True, # Set to false for existing opt method
-                    initial_params=[10.,40.,thm,None,None], # Comment out for existing optimization method
-                    metrics=metrics
+                    hierarchy=hierarchy, # Set to false for existing opt method
+                    initial_params=initial_params, # Comment out for existing optimization method
+                    metrics=metrics,
+                    initial_opt=initial_opt
                 ))
                 print("Done.")
 
@@ -387,7 +400,8 @@ def main(initial_params):
                                         reward=reward,
                                         simulation=simulator,
                                         experiment_dict=experiment_dict,
-                                        T=snap_times)
+                                        T=snap_times,
+                                        params=params)
 
         plt.close()
         fig, ax = plt.subplots(2, 1)
@@ -398,5 +412,15 @@ def main(initial_params):
         plt.close()
 
 if __name__ == "__main__":
-    initial_params = [100.,430.,0.,None,None]
-    main(initial_params=initial_params)
+    params = {
+        "height":10,
+        "length":10,
+        "order":[1,1,1,0,0],
+        "step":1e-4 # Not currently used
+    }
+    main(params=params)
+
+def main_with_params(params):
+    if "step" not in params:
+        params["step"] = None
+    main(params=params)
