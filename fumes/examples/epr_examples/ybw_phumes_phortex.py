@@ -2,6 +2,7 @@
 
 from curses import meta
 import os
+
 import numpy as np
 import scipy as sp
 from sklearn.neighbors import KernelDensity
@@ -16,13 +17,15 @@ from fumes.environment.utils import eos_rho, pacific_sp_T, pacific_sp_S, curfunc
 from fumes.model.mtt import Crossflow
 from fumes.model.parameter import ParameterKDE
 
-from fumes.reward import SampleValues, SampleValuesPrioritizeMid, SampleUCB, SampleUCBEdited
+from fumes.reward import SampleValues, SampleUCB
 
 from fumes.robot import OfflineRobot
 from fumes.simulator import Simulator
 from fumes.trajectory.lawnmower import Lawnmower
 from fumes.planner import TrajectoryOpt, TrajectoryChain, LawnSpiralWithStartGeneratorFlexible
 from fumes.utils.save_mission import save_experiment_json, save_experiment_visualsnapshot_atT
+from fumes.metrics import CoverageMetric, ConvergenceMetric, ComputationalEfficiencyMetric
+
 
 def main(initial_params):
     # Set meta/saving parameters
@@ -282,13 +285,22 @@ def main(initial_params):
                 xm, ym, zm = mtt.get_maxima(start_time, z=[altitude])
                 thm = curhead.heading(start_time) * 180. / np.pi
 
+                # Create metrics for evaluating the optimization
+                sampling_distance = samp_dist  # Use the same sampling distance as defined for reward
+                metrics = [
+                    CoverageMetric(),  # Will use the default samp_dist from evaluate_metrics
+                    ConvergenceMetric(),
+                    ComputationalEfficiencyMetric()
+                    ]
+                
+
                 # Create planner
                 print(f"x0: 100., 430., {thm}, {xm}, {ym}")
                 planners.append(TrajectoryOpt(
                     mtt,
                     traj_generator,
                     reward,
-                    x0=(100., 430., thm, xm, ym),  # (lh, lw, rot, origin_x, origin_y)
+                    x0=(10., 40., thm, xm, ym),  # (lh, lw, rot, origin_x, origin_y)
                     param_bounds=[(20., 500), (20., 500.), (-360., 360.), (-100., 500.), (-100., 500.)],
                     param_names={"lh": 0, "lw": 1, "rot": 2, "origin_x": 3, "origin_y": 4},
                     budget=budget,
@@ -296,14 +308,15 @@ def main(initial_params):
                     max_iters=plan_iter,
                     experiment_name=exp_name,
                     hierarchy=True, # Set to false for existing opt method
-                    initial_params=[100.,430.,thm,None,None] # Comment out for existing optimization method
+                    initial_params=[10.,40.,thm,None,None], # Comment out for existing optimization method
+                    metrics=metrics
                 ))
                 print("Done.")
 
             print("Planners created!")
             planner = TrajectoryChain(planners=planners)
             print("Planners chained! Now getting plan...")
-            plan_opt = planner.get_plan()
+            plan_opt = planner.get_plan(true_environment=env)
             print("Plan in place!")
             traj_opt_saver = planners[0]
 

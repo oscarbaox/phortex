@@ -3,11 +3,12 @@ from scipy import optimize
 from scipy.optimize import minimize
 
 import os
-
+import json
 import matplotlib.pyplot as plt
 
 from fumes.utils import tic, toc
 from fumes.simulator.utils import visualize_and_save_traj
+from fumes.metrics import MetricVisualizer
 
 from .planner import Planner
 from .utils import length_constraint, bound_constraint, param_constraint, \
@@ -19,7 +20,7 @@ class TrajectoryOpt(Planner):
                  limits=[0., 1000., 0., 1000.], param_bounds=None,
                  param_names=None, max_iters=30, tol=1e-8,
                  method="trust-constr", experiment_name=None, hierarchy=False,
-                 initial_params=[None,None,None,None,None]):
+                 initial_params=[None,None,None,None,None],metrics=None):
         """ Initialize trajectory optmizer.
 
         Args:
@@ -45,6 +46,8 @@ class TrajectoryOpt(Planner):
                 "SLSQP", "trust-constr", "BFGS", "basinhopping"
             experiment_name (str): the name of the experiment (optional), used
                 to name output files.
+            metrics (list[OptimizationMetric]): list of metrics to evaluate
+                during optimization
         """
         self.env_model = env_model
         self.traj_generator = traj_generator
@@ -62,6 +65,8 @@ class TrajectoryOpt(Planner):
         self.hierarchy = hierarchy
         self.initial_params = initial_params
         self.constant_params = initial_params
+        self.metrics = metrics or []  # Initialize empty list if no metrics provided
+
 
         if self.experiment_name is None:
             self.experiment_name = "temp"
@@ -84,10 +89,60 @@ class TrajectoryOpt(Planner):
                      "tol": self.tol}
         return json_dict
 
-    def get_plan(self, soft_origin=None, soft_com=None, from_cache=False):
+    def evaluate_metrics(self, trajectory, true_environment):
+        """Evaluate all registered metrics.
+        
+        Args:
+            trajectory (Trajectory): Final optimized trajectory
+            true_environment (Environment): Ground truth environment
+            
+        Returns:
+            dict: Dictionary of metric results
+        """
+        results = {}
+        
+        # Get the sampling distance from the reward if it's SampleValues
+        samp_dist = 1.0  # Default sampling distance
+        if hasattr(self.reward, 'params') and 'samp_dist' in self.reward.params:
+            samp_dist = self.reward.params['samp_dist']
+        print(f"reward hist: {self.reward_history}")
+        for metric in self.metrics:
+            metric_name = metric.__class__.__name__
+            results[metric_name] = metric.evaluate(
+                trajectory=trajectory,
+                env_model=self.env_model,
+                true_environment=true_environment,
+                reward_history=self.reward_history,
+                samp_dist=samp_dist
+            )
+        return results
+
+    def _save_metric_results(self, results):
+        """Save metric results to file and visualize them.
+        
+        Args:
+            results (dict): Dictionary of metric results
+        """
+        # Create metrics directory if it doesn't exist
+        metrics_path = os.path.join(self.path, "metrics")
+        os.makedirs(metrics_path, exist_ok=True)
+        
+        # Save JSON results
+        metric_json_path = os.path.join(metrics_path, f"metric_results_{self.id}.json")
+        with open(metric_json_path, 'w') as f:
+            json.dump(results, f, indent=4)
+        
+        # Create visualization
+        metric_vis_path = os.path.join(metrics_path, f"metric_results_{self.id}.png")
+        MetricVisualizer.plot_metric_history(results, metric_vis_path)
+        
+        print(f"Metrics saved to {metrics_path}")
+
+    def get_plan(self, true_environment=None, soft_origin=None, soft_com=None, from_cache=False):
         """Get a plan by minimizing a cost funciton.
 
         Args:
+            true_environment (Environment): Ground truth environment for metric evaluation
             soft_origin (tuple[float]): if not None, origin is encouraged to
                 be near soft_origin with a soft constraint
             soft_com(tuple[float]): if not None, samples are encouraged to
@@ -333,13 +388,25 @@ class TrajectoryOpt(Planner):
                              f"Should be one of SLSQP, trust-constr, BFGS, or basinhopping.")
 
         if not self.hierarchy:
+            result_traj = self.traj_generator.generate(*res.x)
             print("Optimization completed. Result:", res.x)
             print("Length:", self.traj_generator.generate(*res.x).length)
-            return self.traj_generator.generate(*res.x)
+            # Evaluate metrics if provided and we have ground truth
+            if self.metrics and true_environment is not None:
+                print("Evaluating optimization metrics...")
+                metric_results = self.evaluate_metrics(result_traj, true_environment)
+                self._save_metric_results(metric_results)
+            return result_traj
         else:
+            result_traj = self.traj_generator.generate(*result2)
             print("Optimization completed. Result:", result2)
             print("Length:", self.traj_generator.generate(*result2).length)
-            return self.traj_generator.generate(*result2)
+            # Evaluate metrics if provided and we have ground truth
+            if self.metrics and true_environment is not None:
+                print("Evaluating optimization metrics...")
+                metric_results = self.evaluate_metrics(result_traj, true_environment)
+                self._save_metric_results(metric_results)
+            return result_traj
 
     def _callback(self, x, *args):
         """This callback is called during every iteration of optimization."""
