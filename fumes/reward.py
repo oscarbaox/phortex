@@ -121,7 +121,19 @@ class SampleValuesPrioritizeMid(Reward):
 
         vals = env_model.get_value(t=trajectory.t0, loc=(
             samples[:, 1], samples[:, 2], samples[:, 3]), from_cache=from_cache)
-        reward = 1e4 * (1 - ((0.5 - float(vals.sum()))**2))
+        
+        sorted_vals = sorted(vals)
+        n = len(sorted_vals)
+        mid = n // 2
+        if n % 2 == 1:
+            vals_median = sorted_vals[mid]
+        else:
+            vals_median = (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
+        
+        # Calculate the sum of squares of each value in vals against the median
+        sum_of_squares = float(sum((val - vals_median) ** 2 for val in vals))
+        
+        reward = 1e12 * sum_of_squares
 
         if self.is_cost:
             return -1.0 * reward
