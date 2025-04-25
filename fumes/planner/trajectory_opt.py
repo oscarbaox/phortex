@@ -21,7 +21,7 @@ class TrajectoryOpt(Planner):
                  param_names=None, max_iters=30, tol=1e-8,
                  method="trust-constr", experiment_name=None, hierarchy=False,
                  initial_params=[None,None,None,None,None],metrics=None,
-                 initial_opt=None):
+                 scaling=[1,1,1,1,1],adj_secondary=[1,1,1,1,1]):
         """ Initialize trajectory optmizer.
 
         Args:
@@ -67,7 +67,8 @@ class TrajectoryOpt(Planner):
         self.initial_params = initial_params
         self.constant_params = initial_params
         self.metrics = metrics or []  # Initialize empty list if no metrics provided
-        self.initial_opt = initial_opt
+        self.scaling = scaling
+        self.adj_secondary = adj_secondary
 
 
         if self.experiment_name is None:
@@ -164,7 +165,7 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             con += length_constraint(
-                self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=self.initial_params)
+                self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=self.initial_params,scaling=self.scaling)
 
         if self.limits is not None:
             print("Adding safety boundary constraint.")
@@ -173,7 +174,7 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             con += bound_constraint(
-                self.traj_generator.generate, limits=self.limits, method=self.method, constant_params=self.initial_params)
+                self.traj_generator.generate, limits=self.limits, method=self.method, constant_params=self.initial_params,scaling=self.scaling)
 
         if self.param_bounds is not None:
             print("Adding parameter bounds constraint.")
@@ -182,7 +183,7 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if self.initial_params[i] is None]
-            bon += param_constraint(param_bounds=param_bounds_subset, method=self.method)
+            bon += param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
 
         ##############################
         #### Add soft constraints ####
@@ -221,19 +222,31 @@ class TrajectoryOpt(Planner):
                 return 0.0
 
         def fun(theta):
+            #print("function!")
             return rew(theta) + s_origin(theta) + s_com(theta)
 
-        def make_fun_subset(constant_params):
+        # Pass in scaled parameters, output reward on real parameters
+        def make_scaled_fun(func_in,scaling):
+            def scaled_fun(theta):
+                #print("scaled func!")
+                scaled_theta = [val / scale for val,scale in zip(theta,scaling)]
+                return func_in(scaled_theta)
+            return scaled_fun
+
+        def make_fun_subset(func_in,constant_params,scaling=[1,1,1,1,1]):
             def fun_subset(sub_theta):
                 theta = []
                 opt_var_count = 0
-                for param_value in constant_params:
+                #print(f"hi! fun subset")
+                # Constant params should be without scaling
+                for idx,param_value in enumerate(constant_params):
                     if param_value is not None:
-                        theta += [param_value]
+                        theta += [param_value*scaling[idx]]
                     else:
                         theta += [sub_theta[opt_var_count]]
                         opt_var_count += 1
-                return fun(theta)
+                #print(f"returning func on reconstruct theta {theta}")
+                return func_in(theta)
             return fun_subset
 
         ############################
@@ -259,11 +272,16 @@ class TrajectoryOpt(Planner):
                 options['ftol'] = self.tol
             elif self.method == "trust-constr":
                 options['gtol'] = self.tol
+                #options['verbose'] = 3
             elif self.method == "BFGS":
                 options['xtol'] = self.tol
-        
-        if self.initial_opt is not None:
-            options["eps"] = self.initial_opt
+
+        #if self.method == "trust-constr":
+        #    options['initial_tr_radius'] = 10 ######
+
+        # Wrapper function that adjust input variable scale
+        scaled_fun = make_scaled_fun(fun,self.scaling)
+        print("Ready to optimize!")
 
         if self.method == "SLSQP" or \
                 self.method == "trust-constr" or \
@@ -272,20 +290,20 @@ class TrajectoryOpt(Planner):
             #print(f"x0 for opt: {self.x0}")
             #print(f"method: {self.method}")
             #print(f"constraints: {con}")
-            for c in con:
-                if isinstance(c, optimize.NonlinearConstraint):
+            #for c in con:
+                #if isinstance(c, optimize.NonlinearConstraint):
                     #print(f"Constraint: {c}, function = {c.fun}")
-                    constraint_value = c.fun(self.x0)  # Evaluate constraint function
-                    lb, ub = c.lb, c.ub  # Lower and upper bounds
+                    #constraint_value = c.fun(scale_vars(self.x0))  # Evaluate constraint function
+                    #lb, ub = c.lb, c.ub  # Lower and upper bounds
                     #print(f"Nonlinear constraint at x0: {constraint_value}, should be in [{lb}, {ub}]")
                     
                     #if np.any(constraint_value < lb) or np.any(constraint_value > ub):
                     #    print("x0 violates this constraint!")
             if not self.hierarchy:
                 res = optimize.minimize(
-                    fun=fun,
+                    fun=scaled_fun,
                     jac=None,
-                    x0=np.array(self.x0),
+                    x0=np.array([orig*scaled for orig,scaled in zip(self.x0,self.scaling)]),
                     options=options,
                     bounds=bon,
                     constraints=con,
@@ -294,14 +312,15 @@ class TrajectoryOpt(Planner):
             else:
                 # Perform two different optimizations on subsets of the parameters
                 # First optimization
-                fun_subset = make_fun_subset(self.initial_params)
-                x0_subset = [self.x0[i] for i in range(len(self.x0)) if self.initial_params[i] is None]
+                fun_subset = make_fun_subset(scaled_fun,self.initial_params,self.scaling)
+                x0_subset = [self.x0[i]*self.scaling[i] for i in range(len(self.x0)) if self.initial_params[i] is None]
+                print(f"x0: {x0_subset}")
                 res = optimize.minimize(
                     fun=fun_subset,
                     jac=None,
                     x0=np.array(x0_subset),
                     options=options,
-                    bounds=bon,
+                    bounds=bon, # should be bon
                     constraints=con,
                     method=self.method,
                     callback=self._callback)
@@ -314,13 +333,14 @@ class TrajectoryOpt(Planner):
                 unpacked_results_count = 0 
                 for index,value in enumerate(self.initial_params):
                     if value is None:
-                        new_initial_params += [result1[unpacked_results_count]]
+                        # Convert scaled to unscaled value
+                        new_initial_params += [result1[unpacked_results_count] / self.scaling[index]]
                         unpacked_results_count += 1
                     else:
-                        new_x0_subset += [self.x0[index]]
+                        new_x0_subset += [self.x0[index] * self.scaling[index] * self.adj_secondary[index]]
                         new_initial_params += [None]
                 self.secondary_params = new_initial_params
-                fun_subset = make_fun_subset(self.secondary_params)
+                fun_subset = make_fun_subset(scaled_fun,self.secondary_params,self.scaling)
 
                 ### TODO: maybe break into separate function? if we're assembling constraints
                 ### multiple times
@@ -337,7 +357,7 @@ class TrajectoryOpt(Planner):
 
                     # Instantiate constraint
                     con += length_constraint(
-                        self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=new_initial_params)
+                        self.traj_generator.generate, budget=self.budget, method=self.method,constant_params=new_initial_params,scaling=self.scaling)
 
                 if self.limits is not None:
                     print("Adding safety boundary constraint.")
@@ -346,7 +366,7 @@ class TrajectoryOpt(Planner):
 
                     # Instantiate constraint
                     con += bound_constraint(
-                        self.traj_generator.generate, limits=self.limits, method=self.method,constant_params=new_initial_params)
+                        self.traj_generator.generate, limits=self.limits, method=self.method,constant_params=new_initial_params,scaling=self.scaling)
 
                 if self.param_bounds is not None:
                     print("Adding parameter bounds constraint.")
@@ -355,14 +375,14 @@ class TrajectoryOpt(Planner):
 
                     # Instantiate constraint
                     param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if new_initial_params[i] is None]
-                    bon += param_constraint(param_bounds=param_bounds_subset, method=self.method)
+                    bon += param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
 
                 res = optimize.minimize(
                     fun=fun_subset,
                     jac=None,
                     x0=np.array(new_x0_subset),
                     options=options,
-                    bounds=bon,
+                    bounds=bon, # should be bon
                     constraints=con,
                     method=self.method,
                     callback=self._callback_secondary)
@@ -393,9 +413,10 @@ class TrajectoryOpt(Planner):
                              f"Should be one of SLSQP, trust-constr, BFGS, or basinhopping.")
 
         if not self.hierarchy:
-            result_traj = self.traj_generator.generate(*res.x)
-            print("Optimization completed. Result:", res.x)
-            print("Length:", self.traj_generator.generate(*res.x).length)
+            unscaled_x = self.unscale_vars(res.x)
+            result_traj = self.traj_generator.generate(*unscaled_x)
+            print("Optimization completed. Result:", unscaled_x)
+            print("Length:", self.traj_generator.generate(*unscaled_x).length)
             # Evaluate metrics if provided and we have ground truth
             if self.metrics and true_environment is not None:
                 print("Evaluating optimization metrics...")
@@ -403,9 +424,10 @@ class TrajectoryOpt(Planner):
                 self._save_metric_results(metric_results)
             return result_traj
         else:
-            result_traj = self.traj_generator.generate(*result2)
-            print("Optimization completed. Result:", result2)
-            print("Length:", self.traj_generator.generate(*result2).length)
+            unscaled_x = self.unscale_vars(result2)
+            result_traj = self.traj_generator.generate(*unscaled_x)
+            print("Optimization completed. Result:", unscaled_x)
+            print("Length:", self.traj_generator.generate(*unscaled_x).length)
             # Evaluate metrics if provided and we have ground truth
             if self.metrics and true_environment is not None:
                 print("Evaluating optimization metrics...")
@@ -418,7 +440,8 @@ class TrajectoryOpt(Planner):
         # rew = self.reward.eval(self.traj_generator.generate(*x), self.env_model)
         # import pdb; pdb.set_trace()
         const_params = self.constant_params
-        x = reconstruct_theta(const_params,x)
+        x = reconstruct_theta(const_params,self.unscale_vars(x))
+        print(f"callback! {x}")
         rew = args[0].fun
         self.reward_history.append(rew)
         plt.plot(range(len(self.reward_history)), self.reward_history)
@@ -450,7 +473,8 @@ class TrajectoryOpt(Planner):
         # rew = self.reward.eval(self.traj_generator.generate(*x), self.env_model)
         # import pdb; pdb.set_trace()
         const_params = self.secondary_params
-        x = reconstruct_theta(const_params,x)
+        x = reconstruct_theta(const_params,self.unscale_vars(x))
+        print(f"callback! {x}")
         rew = args[0].fun
         self.reward_history.append(rew)
         plt.plot(range(len(self.reward_history)), self.reward_history)
@@ -476,4 +500,16 @@ class TrajectoryOpt(Planner):
                 traj_name=os.path.join(self.path, f"temp_{self.id}iter{self.neval}"))
             print("Done.")
         self.neval += 1
+    
+    def unscale_vars(self,vars):
+        """
+        Translate scaled variables to unscaled variables
+        """
+        return [var/scale for var,scale in zip(vars,self.scaling)] 
+
+    def scale_vars(self,vars):
+        """
+        Translate unscaled variables to scaled variables
+        """
+        return [var*scale for var,scale in zip(vars,self.scaling)] 
 

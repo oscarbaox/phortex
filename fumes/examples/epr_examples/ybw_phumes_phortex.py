@@ -30,7 +30,7 @@ from fumes.metrics.standard_metrics import *
 def main(params):
     # Set meta/saving parameters
     code_test = True
-    experiment_name = f"ybw_d662_training{np.random.randint(low=0, high=1000)}"
+    experiment_name = f"ybw_d662_training{np.random.randint(low=0, high=10000)}"
     print("Experiment Name: ", experiment_name)
 
     # Set iteration parameters
@@ -306,7 +306,11 @@ def main(params):
                     else:
                         initial_params += [initial_guess[idx]]
                         hierarchy = True
-                initial_opt = params["step"]
+                scaling = params["scaling"]
+                if "adjust_secondary_params" not in params:
+                    adj_secondary = [1,1,1,1,1]
+                else:
+                    adj_secondary = params["adjust_secondary_params"]
 
                 planners.append(TrajectoryOpt(
                     mtt,
@@ -322,7 +326,8 @@ def main(params):
                     hierarchy=hierarchy, # Set to false for existing opt method
                     initial_params=initial_params, # Comment out for existing optimization method
                     metrics=metrics,
-                    initial_opt=initial_opt
+                    scaling=scaling,
+                    adj_secondary=adj_secondary
                 ))
                 print("Done.")
 
@@ -416,7 +421,9 @@ if __name__ == "__main__":
         "height":10,
         "length":10,
         "order":[1,1,1,0,0],
-        "step":1e-4 # Not currently used
+        "initial_trust_radius":1, # Not currently used
+        "scaling":[1,1,1,1,1],
+        "adjust_secondary_params":[1,1,1,1,1] # Factor to scale initially unoptimized params by 
     }
     main(params=params)
 
