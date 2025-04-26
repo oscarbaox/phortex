@@ -17,7 +17,7 @@ from fumes.environment.utils import eos_rho, pacific_sp_T, pacific_sp_S, curfunc
 from fumes.model.mtt import Crossflow
 from fumes.model.parameter import ParameterKDE
 
-from fumes.reward import SampleValues, SampleUCB
+from fumes.reward import SampleValues, SampleUCB, SampleValuesPrioritizeMid
 
 from fumes.robot import OfflineRobot
 from fumes.simulator import Simulator
@@ -192,10 +192,22 @@ def main(params):
     #reward = SampleValues(
     #    sampling_params={"samp_dist": samp_dist},
     #    is_cost=True)
-    reward = SampleValues(
-        sampling_params={"samp_dist": samp_dist},
-        is_cost=True
-    )
+    if "reward_name" in params:
+        reward_name = params["reward_name"]
+    else:
+        reward_name = "SampleValues"
+
+    if reward_name = "SampleValuesPrioritizeMid":
+        reward = SampleValuesPrioritizeMid(
+            sampling_params={"samp_dist": samp_dist},
+            is_cost=True
+        )
+    else:
+        reward = SampleValues(
+            sampling_params={"samp_dist": samp_dist},
+            is_cost=True
+        )
+
 
     ####
     # Create Environment
@@ -418,12 +430,13 @@ def main(params):
 
 if __name__ == "__main__":
     params = {
-        "height":10,
-        "length":10,
-        "order":[1,1,1,0,0],
+        "height":20,
+        "length":25,
+        "order":[0,0,0,0,0],
         "initial_trust_radius":1, # Not currently used
-        "scaling":[1,1,1,1,1],
-        "adjust_secondary_params":[1,1,1,1,1] # Factor to scale initially unoptimized params by 
+        "scaling":[0.1,0.1,1,1,1],
+        "adjust_secondary_params":[1,1,1,1,1], # Factor to scale initially unoptimized params by 
+        "reward_name":"SampleValues"
     }
     main(params=params)
 
