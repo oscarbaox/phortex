@@ -69,6 +69,7 @@ class TrajectoryOpt(Planner):
         self.metrics = metrics or []  # Initialize empty list if no metrics provided
         self.scaling = scaling
         self.adj_secondary = adj_secondary
+        self.min_cost = [None,None]
 
 
         if self.experiment_name is None:
@@ -116,7 +117,8 @@ class TrajectoryOpt(Planner):
                 env_model=self.env_model,
                 true_environment=true_environment,
                 reward_history=self.reward_history,
-                samp_dist=samp_dist
+                samp_dist=samp_dist,
+                min_cost = self.min_cost
             )
         return results
 
@@ -183,13 +185,15 @@ class TrajectoryOpt(Planner):
 
             # Instantiate constraint
             param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if self.initial_params[i] is None]
-            bon += param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
+            bon = param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
 
         ##############################
         #### Add soft constraints ####
         ##############################
 
         def rew(theta):
+            if theta[0] < 5 or theta[1] < 5:
+                print(f"\n\nerror: theta = {theta}\n\n") 
             return self.reward.eval(
                 self.traj_generator.generate(*theta),
                 self.env_model,
@@ -230,7 +234,7 @@ class TrajectoryOpt(Planner):
             def scaled_fun(theta):
                 #print("scaled func!")
                 scaled_theta = [val / scale for val,scale in zip(theta,scaling)]
-                return func_in(scaled_theta)
+                return func_in(scaled_theta) # Real world coordinates
             return scaled_fun
 
         def make_fun_subset(func_in,constant_params,scaling=[1,1,1,1,1]):
@@ -300,6 +304,7 @@ class TrajectoryOpt(Planner):
                     #if np.any(constraint_value < lb) or np.any(constraint_value > ub):
                     #    print("x0 violates this constraint!")
             if not self.hierarchy:
+                print(f"Bounds: {bon}")
                 res = optimize.minimize(
                     fun=scaled_fun,
                     jac=None,
@@ -375,7 +380,7 @@ class TrajectoryOpt(Planner):
 
                     # Instantiate constraint
                     param_bounds_subset = [self.param_bounds[i] for i in range(len(self.param_bounds)) if new_initial_params[i] is None]
-                    bon += param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
+                    bon = param_constraint(param_bounds=param_bounds_subset, method=self.method,scaling=self.scaling)
 
                 res = optimize.minimize(
                     fun=fun_subset,
@@ -441,8 +446,11 @@ class TrajectoryOpt(Planner):
         # import pdb; pdb.set_trace()
         const_params = self.constant_params
         x = reconstruct_theta(const_params,self.unscale_vars(x))
+        if x[0] <= 1e-3 or x[1] <= 1e-3:
+            print("\n\n\nLENGTH OR HEIGHT IS NEGATIVE\n\n\n")
         print(f"callback! {x}")
         rew = args[0].fun
+        self.check_min_cost(x,rew)
         self.reward_history.append(rew)
         plt.plot(range(len(self.reward_history)), self.reward_history)
         plt.xlabel("Iterations")
@@ -455,7 +463,7 @@ class TrajectoryOpt(Planner):
             # f"n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
             f"n:{self.neval}\t Value:{rew}")
             # f"n:{self.neval}")
-        if not (self.neval % 10):
+        if not (self.neval % 5):
             print(
                 f"\t n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
             print("Saving mission checkpoint.")
@@ -476,6 +484,7 @@ class TrajectoryOpt(Planner):
         x = reconstruct_theta(const_params,self.unscale_vars(x))
         print(f"callback! {x}")
         rew = args[0].fun
+        self.check_min_cost(x,rew)
         self.reward_history.append(rew)
         plt.plot(range(len(self.reward_history)), self.reward_history)
         plt.xlabel("Iterations")
@@ -488,7 +497,7 @@ class TrajectoryOpt(Planner):
             # f"n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
             f"n:{self.neval}\t Value:{rew}")
             # f"n:{self.neval}")
-        if not (self.neval % 10):
+        if not (self.neval % 5):
             print(
                 f"\t n:{self.neval}\t Value:{self.reward.eval(self.traj_generator.generate(*x), self.env_model)}")
             print("Saving mission checkpoint.")
@@ -512,4 +521,12 @@ class TrajectoryOpt(Planner):
         Translate unscaled variables to scaled variables
         """
         return [var*scale for var,scale in zip(vars,self.scaling)] 
+
+    def check_min_cost(self,x,cost):
+        """
+        Record current parameters if no lower value of the cost function is known
+        """
+        if self.min_cost[0] is None or self.min_cost[1] >= cost:
+            self.min_cost[0] = x
+            self.min_cost[1] = cost
 

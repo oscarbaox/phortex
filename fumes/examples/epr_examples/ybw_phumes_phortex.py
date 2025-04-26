@@ -25,12 +25,14 @@ from fumes.trajectory.lawnmower import Lawnmower
 from fumes.planner import TrajectoryOpt, TrajectoryChain, LawnSpiralWithStartGeneratorFlexible
 from fumes.utils.save_mission import save_experiment_json, save_experiment_visualsnapshot_atT
 from fumes.metrics.standard_metrics import *
+import datetime
 
 
 def main(params):
     # Set meta/saving parameters
     code_test = True
-    experiment_name = f"ybw_d662_training{np.random.randint(low=0, high=10000)}"
+    name_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    experiment_name = f"ybw_d662_training{name_datetime}"
     print("Experiment Name: ", experiment_name)
 
     # Set iteration parameters
@@ -197,7 +199,7 @@ def main(params):
     else:
         reward_name = "SampleValues"
 
-    if reward_name = "SampleValuesPrioritizeMid":
+    if reward_name == "SampleValuesPrioritizeMid":
         reward = SampleValuesPrioritizeMid(
             sampling_params={"samp_dist": samp_dist},
             is_cost=True
@@ -329,7 +331,7 @@ def main(params):
                     traj_generator,
                     reward,
                     x0=initial_guess,  # (lh, lw, rot, origin_x, origin_y)
-                    param_bounds=[(5., 500), (5., 500.), (-360., 360.), (-100., 500.), (-100., 500.)],
+                    param_bounds=[(0.05, 500), (0.05, 500.), (-360., 360.), (-100., 500.), (-100., 500.)], ### TODO scale bounds by scaling
                     param_names={"lh": 0, "lw": 1, "rot": 2, "origin_x": 3, "origin_y": 4},
                     budget=budget,
                     limits=[-np.inf, np.inf, -np.inf, np.inf],
@@ -434,8 +436,8 @@ if __name__ == "__main__":
         "length":25,
         "order":[0,0,0,0,0],
         "initial_trust_radius":1, # Not currently used
-        "scaling":[0.1,0.1,1,1,1],
-        "adjust_secondary_params":[1,1,1,1,1], # Factor to scale initially unoptimized params by 
+        "scaling":[0.01,0.01,1,1,1],
+        "adjust_secondary_params":[5,5,1,1,1], # Factor to scale initially unoptimized params by 
         "reward_name":"SampleValues"
     }
     main(params=params)

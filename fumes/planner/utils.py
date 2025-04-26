@@ -1,7 +1,7 @@
 """Utility objects for planning."""
 import numpy as np
 
-from scipy.optimize import NonlinearConstraint, LinearConstraint
+from scipy.optimize import NonlinearConstraint, LinearConstraint, Bounds
 
 # If True, the optimization is constrained to keep the solution feasbile
 # at each iteration. In practice, this seems to really hurt optimizer
@@ -185,7 +185,10 @@ def param_constraint(param_bounds, method="SLSQP", constant_params=None, scaling
               for i, b in enumerate(param_bounds)]
         return c1 + c2
     elif method == "trust-constr":
-        return param_bounds
+        lb = [bound[0] for bound in param_bounds]
+        ub = [bound[1] for bound in param_bounds]
+        return Bounds(lb,ub,keep_feasible=True)
+        #return param_bounds
         # return [
         #     LinearConstraint(
         #         A=np.eye(len(param_bounds)),
