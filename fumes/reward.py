@@ -67,6 +67,7 @@ class SampleValues(Reward):
         """
         # Get sample points
         samples = np.asarray(trajectory.uniformly_sample(**self.params))
+        #print(f"samples shape: {samples.shape}")
 
         # Grab the reward from the at a specific snapshot time
         # Assumes that a snapshot at the start of the trajectory
@@ -133,7 +134,7 @@ class SampleValuesPrioritizeMid(Reward):
         # Calculate the sum of squares of each value in vals against the median
         sum_of_squares = float(sum((val - vals_median) ** 2 for val in vals))
         
-        reward = 1e12 * sum_of_squares
+        reward = 1e10 * sum_of_squares
 
         if self.is_cost:
             return -1.0 * reward

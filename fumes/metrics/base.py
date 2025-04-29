@@ -12,7 +12,7 @@ class OptimizationMetric(ABC):
         pass
 
     @abstractmethod
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         """
         Evaluate the quality of optimization using this metric
         

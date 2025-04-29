@@ -194,12 +194,12 @@ def main(params):
     #reward = SampleValues(
     #    sampling_params={"samp_dist": samp_dist},
     #    is_cost=True)
-    if "reward_name" in params:
-        reward_name = params["reward_name"]
+    if "reward_function" in params:
+        reward_function = params["reward_function"]
     else:
-        reward_name = "SampleValues"
+        reward_function = "SampleValues"
 
-    if reward_name == "SampleValuesPrioritizeMid":
+    if reward_function == "SampleValuesPrioritizeMid":
         reward = SampleValuesPrioritizeMid(
             sampling_params={"samp_dist": samp_dist},
             is_cost=True
@@ -331,7 +331,7 @@ def main(params):
                     traj_generator,
                     reward,
                     x0=initial_guess,  # (lh, lw, rot, origin_x, origin_y)
-                    param_bounds=[(0.05, 500), (0.05, 500.), (-360., 360.), (-100., 500.), (-100., 500.)], ### TODO scale bounds by scaling
+                    param_bounds=[(5, 500), (5, 500.), (-360., 360.), (-100., 500.), (-100., 500.)], ### TODO scale bounds by scaling
                     param_names={"lh": 0, "lw": 1, "rot": 2, "origin_x": 3, "origin_y": 4},
                     budget=budget,
                     limits=[-np.inf, np.inf, -np.inf, np.inf],
@@ -432,13 +432,14 @@ def main(params):
 
 if __name__ == "__main__":
     params = {
-        "height":20,
-        "length":25,
+        "height":25,
+        "length":150,
         "order":[0,0,0,0,0],
         "initial_trust_radius":1, # Not currently used
-        "scaling":[0.01,0.01,1,1,1],
-        "adjust_secondary_params":[5,5,1,1,1], # Factor to scale initially unoptimized params by 
-        "reward_name":"SampleValues"
+        "scaling":[0.1,0.1,1,1,1],
+        "adjust_secondary_params":[1,1,1,1,1], # Factor to scale initially unoptimized params by 
+        "reward_function":"SampleValues",
+        "manual":"true"
     }
     main(params=params)
 

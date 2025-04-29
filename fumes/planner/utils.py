@@ -186,7 +186,10 @@ def param_constraint(param_bounds, method="SLSQP", constant_params=None, scaling
         return c1 + c2
     elif method == "trust-constr":
         lb = [bound[0] for bound in param_bounds]
+        lb = [bound*scale for bound,scale in zip(lb,scaling)]
         ub = [bound[1] for bound in param_bounds]
+        ub = [bound*scale for bound,scale in zip(ub,scaling)]
+        print(f"Bounds: {lb}, {ub}")
         return Bounds(lb,ub,keep_feasible=True)
         #return param_bounds
         # return [

@@ -6,7 +6,7 @@ from .base import OptimizationMetric
 class CoverageMetric(OptimizationMetric):
     """Metric that evaluates trajectory coverage and prediction accuracy."""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         """
         Evaluate trajectory coverage and model prediction accuracy.
         1. Creates a grid over the trajectory's bounding box
@@ -57,7 +57,8 @@ class CoverageMetric(OptimizationMetric):
             return {
                 'true_positive_rate': float(np.mean(true_vals > threshold)),
                 'prediction_accuracy': float(np.mean(np.abs(true_vals - predicted_vals))),
-                'coverage_area': int(len(xs))
+                'coverage_area': int(len(xs)),
+                'trajectory_length': float(trajectory.length)
             }
         except Exception as e:
             print(f"Error in CoverageMetric: {str(e)}")
@@ -65,14 +66,15 @@ class CoverageMetric(OptimizationMetric):
             return {
                 'true_positive_rate': 0.0,
                 'prediction_accuracy': 0.0,
-                'coverage_area': 0
+                'coverage_area': 0,
+                'trajectory_length':0.0
             }
 
 
 class ConvergenceMetric(OptimizationMetric):
     """Metric that evaluates optimization convergence performance."""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         """
         Evaluate optimization convergence performance.
         1. Takes reward history from optimization
@@ -95,21 +97,25 @@ class ConvergenceMetric(OptimizationMetric):
             return {
                 'convergence_rate': 0.0,
                 'final_reward': reward_history[-1] if reward_history else 0.0,
-                'improvement_ratio': 1.0
+                'improvement_ratio': 1.0,
+                'best_reward': 0.0,
+                'drift_ratio': 1.0
             }
             
         # Calculate convergence statistics
         return {
             'convergence_rate': float(np.std(np.diff(reward_history))),
             'final_reward': float(reward_history[-1]),
-            'improvement_ratio': float(reward_history[-1] / reward_history[0]) if reward_history[0] != 0 else 1.0
+            'improvement_ratio': float(reward_history[-1] / reward_history[0]) if reward_history[0] != 0 else 1.0,
+            'best_reward': float(min_cost[1]),
+            'drift_ratio': float(reward_history[-1] / min_cost[1]) if min_cost[1] != 0 else 1.0
         }
 
 
 class ComputationalEfficiencyMetric(OptimizationMetric):
     """Metric that evaluates computational efficiency of optimization."""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         """
         Evaluate computational efficiency of optimization.
          1. Takes reward history
@@ -142,7 +148,7 @@ class ComputationalEfficiencyMetric(OptimizationMetric):
 class RobustnessMetric(OptimizationMetric):
     """Evaluates trajectory robustness to perturbations"""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         # Add small perturbations to trajectory parameters
         perturbation = 0.05  # 5% perturbation
         original_value = env_model.get_value(t=trajectory.t0, 
@@ -167,7 +173,7 @@ class RobustnessMetric(OptimizationMetric):
 class InformationGainMetric(OptimizationMetric):
     """Evaluates the information gained during trajectory execution"""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         # Sample points along trajectory
         points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
         points = np.array(points)
@@ -187,7 +193,7 @@ class InformationGainMetric(OptimizationMetric):
 class SpatialEfficiencyMetric(OptimizationMetric):
     """Evaluates the spatial efficiency of the trajectory"""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         # Get trajectory points
         points = trajectory.uniformly_sample(kwargs.get('samp_dist', 1.0))
         points = np.array(points)
@@ -207,11 +213,11 @@ class SpatialEfficiencyMetric(OptimizationMetric):
             'path_smoothness': float(np.mean(curvature)),
             'space_utilization': float(len(points) / area_covered)
         }
-        
+
 class PlumeDynamicsMetric(OptimizationMetric):
     """Evaluates how well the trajectory adapts to plume dynamics"""
     
-    def evaluate(self, trajectory, env_model, true_environment, reward_history, **kwargs):
+    def evaluate(self, trajectory, env_model, true_environment, reward_history, min_cost, **kwargs):
         # Sample at different time steps
         times = np.linspace(trajectory.t0, trajectory.time_at_end, 10)
         dynamics_scores = []

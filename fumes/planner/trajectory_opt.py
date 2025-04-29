@@ -192,8 +192,9 @@ class TrajectoryOpt(Planner):
         ##############################
 
         def rew(theta):
-            if theta[0] < 5 or theta[1] < 5:
-                print(f"\n\nerror: theta = {theta}\n\n") 
+            #print(f"Thetas entering rew: {theta[0]}, {theta[1]}")
+            #if theta[0] < 0.05 or theta[1] < 0.05:
+            #    print(f"\n\nerror: theta = {theta}\n\n") 
             return self.reward.eval(
                 self.traj_generator.generate(*theta),
                 self.env_model,
@@ -232,8 +233,8 @@ class TrajectoryOpt(Planner):
         # Pass in scaled parameters, output reward on real parameters
         def make_scaled_fun(func_in,scaling):
             def scaled_fun(theta):
-                #print("scaled func!")
                 scaled_theta = [val / scale for val,scale in zip(theta,scaling)]
+                #print(f"scaled func! input {theta}, output {scaled_theta}")
                 return func_in(scaled_theta) # Real world coordinates
             return scaled_fun
 
@@ -249,7 +250,7 @@ class TrajectoryOpt(Planner):
                     else:
                         theta += [sub_theta[opt_var_count]]
                         opt_var_count += 1
-                #print(f"returning func on reconstruct theta {theta}")
+                #print(f"subset func! input {sub_theta}, output {theta}")
                 return func_in(theta)
             return fun_subset
 
@@ -319,7 +320,7 @@ class TrajectoryOpt(Planner):
                 # First optimization
                 fun_subset = make_fun_subset(scaled_fun,self.initial_params,self.scaling)
                 x0_subset = [self.x0[i]*self.scaling[i] for i in range(len(self.x0)) if self.initial_params[i] is None]
-                print(f"x0: {x0_subset}")
+                #print(f"x0: {x0_subset}")
                 res = optimize.minimize(
                     fun=fun_subset,
                     jac=None,
@@ -445,10 +446,11 @@ class TrajectoryOpt(Planner):
         # rew = self.reward.eval(self.traj_generator.generate(*x), self.env_model)
         # import pdb; pdb.set_trace()
         const_params = self.constant_params
+        x_old = x.copy()
         x = reconstruct_theta(const_params,self.unscale_vars(x))
         if x[0] <= 1e-3 or x[1] <= 1e-3:
             print("\n\n\nLENGTH OR HEIGHT IS NEGATIVE\n\n\n")
-        print(f"callback! {x}")
+        print(f"callback! {x} (scaled from {x_old})")
         rew = args[0].fun
         self.check_min_cost(x,rew)
         self.reward_history.append(rew)
