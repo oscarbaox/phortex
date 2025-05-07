@@ -85,9 +85,10 @@ class SampleValues(Reward):
 
 
 class SampleValuesPrioritizeMid(Reward):
-    """Rewards sampling points that prioritize values near the median of the distribution."""
+    """Rewards sampling points that prioritize values near the optimal threshold between
+    high and low confidence regions along the trajectory."""
 
-    def __init__(self, sampling_params=None, scale=1e4, is_cost=False):
+    def __init__(self, sampling_params=None, scale=1e4, is_cost=False, threshold=None, threshold_shift=None):
         """Initialize reward object.
 
         Args:
@@ -98,13 +99,77 @@ class SampleValuesPrioritizeMid(Reward):
         self.params = sampling_params or {}
         self.scale = scale
         self.is_cost = is_cost
-
+        self.threshold = threshold
+        self.threshold_shift = threshold_shift
     def _json_stats(self):
         """Returns dict of reward info."""
         return {"reward_func": "SampleValuesPrioritizeMid",
                 "sampling_params": self.params,
                 "scale": self.scale,
-                "is_cost": self.is_cost}
+                "is_cost": self.is_cost,
+                "threshold": self.threshold}
+    
+    def _otsu_threshold(self, values):
+        """Compute optimal threshold using Otsu's method.
+        
+        Args:
+            values (numpy.ndarray): Array of confidence values
+            
+        Returns:
+            float: Optimal threshold value
+        """
+        # Create histogram of values
+        min_val, max_val = np.min(values), np.max(values)
+        if min_val == max_val:  # Handle edge case
+            return min_val
+            
+        # Use 64 bins for the histogram
+        hist, bin_edges = np.histogram(values, bins=64, range=(min_val, max_val))
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        
+        # Total number of pixels
+        total = np.sum(hist)
+        if total == 0:  # Handle edge case
+            return min_val
+            
+        # Calculate sum and squared sum
+        sum_total = np.sum(hist * bin_centers)
+        
+        # Initialize variables
+        best_threshold = 0
+        best_variance = 0
+        
+        # Values for each iteration
+        weight_bg = 0
+        sum_bg = 0
+        
+        # Check each possible threshold
+        for i, threshold in enumerate(bin_centers):
+            # Update background class statistics
+            weight_bg += hist[i]
+            sum_bg += hist[i] * bin_centers[i]
+            
+            # Skip if background or foreground class is empty
+            if weight_bg == 0 or weight_bg == total:
+                continue
+                
+            # Calculate foreground class statistics
+            weight_fg = total - weight_bg
+            sum_fg = sum_total - sum_bg
+            
+            # Calculate means
+            mean_bg = sum_bg / weight_bg
+            mean_fg = sum_fg / weight_fg
+            
+            # Calculate between-class variance
+            variance = weight_bg * weight_fg * ((mean_bg - mean_fg) ** 2)
+            
+            # Update best threshold if we found better variance
+            if variance > best_variance:
+                best_variance = variance
+                best_threshold = threshold
+                
+        return best_threshold
 
     def eval(self, trajectory, env_model, from_cache=False):
         """Evaluate the reward of a trajectory and model or environment.
@@ -116,32 +181,24 @@ class SampleValuesPrioritizeMid(Reward):
 
         Returns: (float) reward value
         """
-        # Get sample points along trajectory
+            
+        # Get sample points
         samples = np.asarray(trajectory.uniformly_sample(**self.params))
+        vals = env_model.get_value(t=trajectory.t0, loc=(
+            samples[:, 1], samples[:, 2], samples[:, 3]), from_cache=from_cache)
+
+        # Calculate how close each sample is to the threshold
+        proximity_to_threshold = (np.abs(vals - self.threshold) - self.threshold_shift) 
         
-        # Get values at sample points
-        vals = env_model.get_value(
-            t=trajectory.t0,
-            loc=(samples[:, 1], samples[:, 2], samples[:, 3]),
-            from_cache=from_cache
-        ).astype(float)
+        # Average reward across all sample points
+        avg_reward = -1 * float(proximity_to_threshold.sum())
         
-        # Calculate percentiles from the values directly
-        # We can use the values themselves to establish the empirical CDF
-        # This is more efficient than creating a separate grid
-        sorted_vals = np.sort(vals)
-        percentiles = rankdata(vals, method="average", axis=None) / len(vals)
-        
-        # Calculate mean squared error from target percentile (0.5)
-        # Lower MSE means values are closer to median - this is what we want to reward
-        mse = float(np.mean((percentiles - 0.5) ** 2))
-        
-        # Convert MSE to reward (smaller MSE = higher reward)
-        reward = self.scale * (1.0 - mse)
+        # Apply scaling
+        final_reward = self.scale * avg_reward
         
         if self.is_cost:
-            return -1.0 * reward
-        return reward
+            return -1.0 * final_reward
+        return final_reward
 
 
 class SampleUCB(Reward):

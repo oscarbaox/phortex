@@ -1,7 +1,7 @@
 """ Script to iterate over multiple options of the ybw_phumes_phortex example """
 from fumes.examples.epr_examples import ybw_phumes_phortex
 
-rewards = ["SampleValuesPrioritizeMid","SampleValues"]
+rewards = ["SampleValuesPrioritizeMid"]
 count = 0
 failed = 0
 #order_scale_groups = [([0,0,0,0,0],[1,1,1,1,1]),([0,0,0,0,0],[0.5,0.5,1,1,1]),
@@ -24,8 +24,8 @@ for reward in rewards:
                     "order":group[3],
                     "scaling":[group[2],group[2],1,1,1],
                     "adjust_secondary_params":[1,1,1,1,1],
-                    "reward_function":reward,
-                    "date":"0429",
+                    "reward_function":"SampleValuesPrioritizeMid",
+                    "date":"0507",
                     "sim_num":i
                 }
                 ybw_phumes_phortex.main_with_params(params)

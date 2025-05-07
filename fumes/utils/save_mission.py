@@ -4,6 +4,7 @@ from datetime import datetime
 import dill as pickle
 import json
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Cursor
 
 
 def get_mission_hash(mission_name="modelsim"):
@@ -60,6 +61,17 @@ def save_experiment_visualsnapshot(experiment_name, iter_num, rob, model, env, t
         plt.savefig(os.path.join(directory, f"model_snapshot_t{round(st)}_{iter_num}.png"))
         plt.close()
 
+    # Create figure for both saving and showing
+    plt.figure(figsize=(10, 8))
+    
+    # Get global environment snapshot
+    env_snapshot = env.get_snapshot(t=snap_times[-1], z=[trajectory.altitude], 
+                                  xrange=env.extent.xrange,
+                                  yrange=env.extent.yrange,
+                                  xres=env.extent.xres,
+                                  yres=env.extent.yres,
+                                  from_cache=False)
+    
     # plot observations and trajectories
     plt.imshow(env_snapshot[0], origin="lower", extent=(env.extent.xrange[0],
                env.extent.xrange[1], env.extent.yrange[0], env.extent.yrange[1]))
@@ -71,7 +83,13 @@ def save_experiment_visualsnapshot(experiment_name, iter_num, rob, model, env, t
              env.extent.yrange[0], env.extent.yrange[1]))
     plt.xlabel('X-coordinate')
     plt.ylabel('Y-coordinate')
+    plt.title("Environment with Trajectory")
+    
+    # Save the static image
     plt.savefig(os.path.join(directory, f"trajectory_snapshot_{iter_num}.png"))
+    
+    # Show interactive plot
+    plt.show()
 
 
 def save_experiment_visualsnapshot_atT(experiment_name, iter_num, rob, model, env, traj_opt, trajectory, reward, simulation, experiment_dict, T, params={}):

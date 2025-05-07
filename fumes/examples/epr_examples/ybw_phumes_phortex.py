@@ -72,23 +72,23 @@ def main(params):
     ####
     # True Source Params
     ####
-    v0 = 0.6  # source exit velocity
-    a0 = 0.8  # source area
+    v0 = 0.6  * 4.5# source exit velocity
+    a0 = 0.8  * 6.5 # source area
     s0 = 34.608  # source salinity
     t0 = 300  # source temperature
     rho0 = eos_rho(t0, s0)  # source density
-    E = (0.15, 0.2)
+    E = (0.23, 0.33)
 
     ####
     # Inferred Source Params
     ####
     v0_inf = KernelDensity(kernel='gaussian', bandwidth=0.1).fit(
-        np.random.uniform(0.05, 1.5, 5000)[:, np.newaxis])
+        np.random.uniform(0.25, 5.75, 5000)[:, np.newaxis])
     v0_prop = sp.stats.norm(loc=0, scale=0.1)
     v0_param = ParameterKDE(v0_inf, v0_prop, limits=(0.01, 1.55))
 
     a0_inf = KernelDensity(kernel='gaussian', bandwidth=0.05).fit(
-        np.random.uniform(0.05, 0.95, 5000)[:, np.newaxis])
+        np.random.uniform(0.25, 10.5, 5000)[:, np.newaxis])
     a0_prop = sp.stats.norm(loc=0, scale=0.1)
     a0_param = ParameterKDE(a0_inf, a0_prop, limits=(0.01, 1.0))
 
@@ -188,28 +188,6 @@ def main(params):
     vel = 0.5  # robot velocity (in meters/second)
     com_window = 120  # communication window (in seconds)
 
-    ####
-    # Reward function
-    ####
-    #reward = SampleValues(
-    #    sampling_params={"samp_dist": samp_dist},
-    #    is_cost=True)
-    if "reward_function" in params:
-        reward_function = params["reward_function"]
-    else:
-        reward_function = "SampleValues"
-
-    if reward_function == "SampleValuesPrioritizeMid":
-        reward = SampleValuesPrioritizeMid(
-            sampling_params={"samp_dist": samp_dist},
-            is_cost=True
-        )
-    else:
-        reward = SampleValues(
-            sampling_params={"samp_dist": samp_dist},
-            is_cost=True
-        )
-
 
     ####
     # Create Environment
@@ -234,6 +212,8 @@ def main(params):
     ####
     # Model and Environment Initialization Plots and Saving
     ####
+    threshold = []
+    threshold_shift = []
     for st in snap_times:
         # plot underlying environment
         env_snapshot = env.get_snapshot(t=st, z=sampling_heights, from_cache=False)
@@ -241,6 +221,7 @@ def main(params):
                                                             env.extent.xrange[1],
                                                             env.extent.yrange[0],
                                                             env.extent.yrange[1]))
+        #plt.show()
         plt.xlabel('X-coordinate')
         plt.ylabel('Y-coordinate')
         plt.title("Environment Snapshot")
@@ -258,6 +239,49 @@ def main(params):
         plt.title("Model Snapshot")
         plt.savefig(os.path.join(model_directory, f"model_snapshot_t{round(st)}_init.svg"))
         plt.close()
+
+        mod_snapshot = mtt.get_snapshot(t=st, z=sampling_heights, from_cache=False)
+        mod_snapshot_flat = mod_snapshot[0].flatten()
+        cdf = np.cumsum(mod_snapshot_flat)
+        med_idx = np.where(cdf >= 0.4 * cdf[-1])[0][0]
+        med_val = mod_snapshot_flat[med_idx]
+        threshold.append(med_val)
+        threshold_shift.append(np.max(np.abs(mod_snapshot_flat-med_val)))
+        plt.imshow(np.power(np.abs(mod_snapshot[0]-med_val), 2), origin="lower", extent=(env.extent.xrange[0],
+                                                            env.extent.xrange[1],
+                                                            env.extent.yrange[0],
+                                                            env.extent.yrange[1]))
+        plt.xlabel('X-coordinate')
+        plt.ylabel('Y-coordinate')
+        plt.title("Model Snapshot Adjusted")
+        #plt.show()
+        plt.savefig(os.path.join(model_directory, f"model_snapshot_midvals_t{round(st)}_init.svg"))
+        plt.close()
+
+        ####
+    # Reward function
+    ####
+    #reward = SampleValues(
+    #    sampling_params={"samp_dist": samp_dist},
+    #    is_cost=True)
+    if "reward_function" in params:
+        reward_function = params["reward_function"]
+    else:
+        reward_function = "SampleValues"
+
+    if reward_function == "SampleValuesPrioritizeMid":
+        reward = SampleValuesPrioritizeMid(
+            sampling_params={"samp_dist": samp_dist},
+            is_cost=True,
+            threshold=threshold[0],
+            threshold_shift=threshold_shift[0]
+        )
+    else:
+        reward = SampleValues(
+            sampling_params={"samp_dist": samp_dist},
+            is_cost=True
+        )
+
 
     ####
     # Simulation Loop
@@ -432,13 +456,13 @@ def main(params):
 
 if __name__ == "__main__":
     params = {
-        "height":25,
-        "length":150,
+        "height":10,
+        "length":10,
         "order":[0,0,0,0,0],
         "initial_trust_radius":1, # Not currently used
         "scaling":[0.1,0.1,1,1,1],
         "adjust_secondary_params":[1,1,1,1,1], # Factor to scale initially unoptimized params by 
-        "reward_function":"SampleValues",
+        "reward_function":"SampleValuesPrioritizeMid",
         "manual":"true"
     }
     main(params=params)
